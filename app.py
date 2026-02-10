@@ -3,12 +3,15 @@ import altair as alt
 import pandas as pd
 import py3Dmol
 import json
-import base64
 import tempfile
 import os
 from fpdf import FPDF
 from streamlit_molstar import st_molstar
 from src.logic_engine import *
+from src.agent import load_overview_text, run_groq_agent, DEFAULT_MODEL
+
+# NOTE: Storing API keys in code is insecure. Prefer env vars or Streamlit secrets.
+GROQ_API_KEY = "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"
 try:
     import vl_convert as vl
 except Exception:
@@ -192,13 +195,22 @@ show_sec = st.sidebar.toggle("Secondary Structure")
 show_conf = st.sidebar.toggle("Model Confidence (pLDDT)")
 show_hotspots = st.sidebar.toggle("AI Hotspot Overlay", value=True)
 
+if "run_analysis" not in st.session_state:
+    st.session_state.run_analysis = False
 run_btn = st.sidebar.button("Run Global Analysis", type="primary", use_container_width=True)
+if run_btn:
+    st.session_state.run_analysis = True
 
 # --- 5. MAIN UI ---
 st.title("Rare-Disease Structural Anomaly Detector")
 st.caption(f"Target: {gene_symbol} | {st.session_state.disease_select}")
 
-if run_btn:
+overview_text = load_overview_text("data/knowledge/overview.txt")
+
+if "agent_history" not in st.session_state:
+    st.session_state.agent_history = []
+
+if st.session_state.run_analysis:
     with st.spinner("Analyzing..."):
         uid = resolve_uniprot_id(gene_symbol)
         if not uid: st.error("ID resolution failed.")
@@ -363,6 +375,28 @@ if run_btn:
                 r2.metric("Instability Index", f"{report['instability_index']:.3f}")
                 r3.metric("3D Hotspots", report["anomaly_clusters"])
 
+                # Build context for agent
+                top_anomalies = (
+                    protein_df.sort_values(by="am_pathogenicity", ascending=False)
+                    .head(5)[["variant", "residue_num", "am_pathogenicity"]]
+                    .to_dict(orient="records")
+                )
+                hotspot_residues = (
+                    hotspots[hotspots["cluster_id"] >= 0]["residue_num"].unique().tolist()
+                    if not hotspots.empty
+                    else []
+                )
+                st.session_state.agent_context = (
+                    f"Gene: {gene_symbol}\n"
+                    f"Disease: {st.session_state.disease_select}\n"
+                    f"UniProt ID: {uid}\n"
+                    f"Instability Index (mean pathogenicity): {report['instability_index']:.3f}\n"
+                    f"Clinical Status: {report['status']}\n"
+                    f"Hotspot clusters: {report['anomaly_clusters']}\n"
+                    f"Top anomalies: {top_anomalies}\n"
+                    f"Hotspot residues (sample): {hotspot_residues[:20]}\n"
+                )
+
                 st.subheader("Export Report")
                 plot_pngs = []
                 try:
@@ -401,5 +435,41 @@ if run_btn:
                     m_col2.metric("Min pLDDT", f"{plddt_plot_df['plddt'].min():.1f}")
                     m_col3.metric("Max pLDDT", f"{plddt_plot_df['plddt'].max():.1f}")
                     st.altair_chart(conf_chart, use_container_width=True)
+
+                # 6. AGENT (GROQ)
+                st.markdown("---")
+                st.subheader("Ask the Agent")
+                if st.session_state.agent_history:
+                    for item in st.session_state.agent_history:
+                        st.markdown(f"**You:** {item['q']}")
+                        st.markdown(f"**Agent:** {item['a']}")
+
+                with st.form("agent_form", clear_on_submit=True):
+                    model_id = st.text_input("Model", value=DEFAULT_MODEL)
+                    user_q = st.text_area(
+                        "Question",
+                        placeholder="Ask about the plots, confidence, or hotspots...",
+                    )
+                    submitted = st.form_submit_button("Ask Agent")
+
+                if submitted:
+                    api_key = GROQ_API_KEY or st.secrets.get("GROQ_API_KEY") or os.environ.get("GROQ_API_KEY")
+                    if not api_key:
+                        st.warning("Add your Groq API key in the sidebar or set GROQ_API_KEY.")
+                    else:
+                        with st.spinner("Thinking..."):
+                            answer = run_groq_agent(
+                                user_q,
+                                overview_text=overview_text,
+                                api_key=api_key,
+                                model=model_id,
+                                extra_context=st.session_state.get("agent_context", ""),
+                            )
+                        if answer:
+                            st.session_state.agent_history.append({"q": user_q, "a": answer})
+                            st.markdown(f"**You:** {user_q}")
+                            st.markdown(f"**Agent:** {answer}")
+                        else:
+                            st.info("No response returned.")
             else: st.warning("No data found.")
 else: st.info("👈 Select a disease or gene in the sidebar to begin.")
