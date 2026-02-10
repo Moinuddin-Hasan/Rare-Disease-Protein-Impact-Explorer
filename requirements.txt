@@ -16,7 +16,7 @@ biopython>=1.81
 httpx>=0.24.0
 
 # 3D Visualization Component
-streamlit-molstar>=0.5.0
+streamlit-molstar==0.4.21
 altair>=5.0.0
 vl-convert-python>=1.4.0
 groq>=0.12.0
