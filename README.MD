@@ -19,7 +19,7 @@ While standard tools provide 1D pathogenicity scores, this platform introduces *
 5. **Visualization**: Interactive 3D rendering is provided via the **Mol* Viewer**. [web:109]
 
 ## Installation & Setup
-1. Clone the repository: `git clone https://github.com/your-repo/rare-disease-explorer.git`
+1. Clone the repository: `git clone https://github.com/Moinuddin-Hasan/Rare-Disease-Protein-Impact-Explorer.git`
 2. Install dependencies: `pip install -r requirements.txt`
 3. Run the application: `streamlit run app.py`
 
