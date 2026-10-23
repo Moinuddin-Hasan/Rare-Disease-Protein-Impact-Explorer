@@ -11,7 +11,7 @@ from src.logic_engine import *
 from src.agent import load_overview_text, run_groq_agent, DEFAULT_MODEL
 
 # NOTE: Storing API keys in code is insecure. Prefer env vars or Streamlit secrets.
-GROQ_API_KEY = "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"
+GROQ_API_KEY = ""
 try:
     import vl_convert as vl
 except Exception:
